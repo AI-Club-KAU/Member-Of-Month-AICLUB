@@ -287,6 +287,8 @@ main{max-width:1200px;margin:auto;padding-block:28px 80px;padding-left:max(16px,
   box-shadow:0 0 16px rgba(84,214,64,.3),0 6px 18px rgba(0,0,0,.35);transition:.2s;
 }
 .dl-btn:hover{background:rgba(30,70,50,.95)}
+/* Download is for laptops only (phones and tablets render the image badly) */
+@media (max-width:1024px),(hover:none){ .dl-btn{display:none} }
 .dl-btn:disabled{opacity:.6;cursor:default}
 .export-head{display:flex;justify-content:center;margin-bottom:22px}
 .export-head img{height:58px;width:auto}
@@ -824,35 +826,6 @@ const EXPORT_WIDTH = 1280; // the image always uses the laptop layout, whatever 
 
 // Builds the honor board in a hidden 1280px-wide frame (so the laptop layout applies even on phones),
 // with the club logo on top and the hashtag at the bottom, and returns it as a PNG data URL
-// Safari (and every iPhone/iPad browser) ignores shadow blur when drawing the image, so the soft neon glow comes out
-// as solid slabs. There the glow is rebuilt from sharp layers that fade out — green on one side, violet on the other.
-const isWebKit = () => /iPad|iPhone|iPod/.test(navigator.userAgent)
-  || (/AppleWebKit/.test(navigator.userAgent) && !/Chrome|Chromium|Edg|Android/.test(navigator.userAgent));
-const SAFARI_GLOW = `<style>
-  #export .neon{box-shadow:
-    -2px 0 0 1px rgba(84,214,64,.30), -4px 0 0 3px rgba(84,214,64,.16), -7px 0 0 5px rgba(84,214,64,.08), -10px 0 0 7px rgba(84,214,64,.04),
-     2px 0 0 1px rgba(126,54,227,.38), 4px 0 0 3px rgba(126,54,227,.20), 7px 0 0 5px rgba(126,54,227,.10), 10px 0 0 7px rgba(126,54,227,.05)!important}
-  #export .avatar{box-shadow:none!important}
-</style>`;
-
-// Readex Pro (Arabic + Latin) as inline @font-face rules, so the image keeps the site's font on every browser
-let fontCSSCache = null;
-async function embeddedFontCSS(){
-  if (fontCSSCache) return fontCSSCache;
-  const link = document.querySelector('link[href*="fonts.googleapis.com/css2"]');
-  const css = await (await fetch(link.href)).text();
-  const blocks = css.split(/(?=\/\* )/).filter(b => /^\/\* (arabic|latin) \*\//.test(b));
-  const toDataURL = blob => new Promise((ok, fail) => {
-    const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = fail; r.readAsDataURL(blob);
-  });
-  const rules = await Promise.all(blocks.map(async b => {
-    const url = (b.match(/url\((https:[^)]+)\)/) || [])[1];
-    if (!url) return "";
-    return b.replace(url, await toDataURL(await (await fetch(url)).blob()));
-  }));
-  return (fontCSSCache = rules.join("\n"));
-}
-
 async function honorImage(m){
   const styles = [...document.querySelectorAll('style, link[rel="stylesheet"]')].map(n => n.outerHTML).join("");
   const sprite = document.querySelector("body > svg[aria-hidden]").outerHTML;
@@ -860,8 +833,7 @@ async function honorImage(m){
   frame.setAttribute("aria-hidden", "true");
   frame.style.cssText = `position:fixed;top:0;left:-${EXPORT_WIDTH + 100}px;width:${EXPORT_WIDTH}px;height:900px;border:0`;
   frame.srcdoc = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
-    <base href="${esc(location.href)}">${styles}
-    ${isWebKit() ? SAFARI_GLOW : ""}</head>
+    <base href="${esc(location.href)}">${styles}</head>
     <body style="margin:0">
       <div id="export" style="width:${EXPORT_WIDTH}px;padding:40px 48px;box-sizing:border-box;background:#0a1a30">
         ${sprite}<!-- the circuit wires (<use href="#wire-r">) only render if the sprite is inside the captured node -->
@@ -880,7 +852,6 @@ async function honorImage(m){
     await w.document.fonts.ready;
     const node = w.document.getElementById("export");
     const opts = { pixelRatio:2, cacheBust:true, backgroundColor:"#0a1a30", width:node.offsetWidth, height:node.offsetHeight };
-    try { opts.fontEmbedCSS = await embeddedFontCSS(); } catch {} // without it the image falls back to the system font
     await w.htmlToImage.toPng(node, opts); // first pass warms up images & fonts (needed on Safari)
     return await w.htmlToImage.toPng(node, opts);
   } finally {
