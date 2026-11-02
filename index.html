@@ -102,9 +102,10 @@ main{max-width:1200px;margin:auto;padding-block:28px 80px;padding-left:max(16px,
 
 /* Tag above cards */
 .tag .short,.motm .dept .short{display:none}
+/* Gradient frame drawn with two backgrounds (not border-image) so the downloaded image renders it too */
 .tag{
-  display:inline-block;padding:4px 18px;border-radius:6px;font-size:14px;
-  background:#16213b;border:1.5px solid;border-image:var(--grad) 1;
+  display:inline-block;padding:4px 18px;font-size:14px;
+  border:1.5px solid transparent;background:linear-gradient(#16213b,#16213b) padding-box,var(--grad) border-box;
 }
 
 /* ---------- Avatar ---------- */
@@ -831,8 +832,9 @@ async function honorImage(m){
   frame.style.cssText = `position:fixed;top:0;left:-${EXPORT_WIDTH + 100}px;width:${EXPORT_WIDTH}px;height:900px;border:0`;
   frame.srcdoc = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
     <base href="${esc(location.href)}">${styles}</head>
-    <body style="margin:0">${sprite}
+    <body style="margin:0">
       <div id="export" style="width:${EXPORT_WIDTH}px;padding:40px 48px;box-sizing:border-box;background:#0a1a30">
+        ${sprite}<!-- the circuit wires (<use href="#wire-r">) only render if the sprite is inside the captured node -->
         <div class="export-head"><img src="aiclub-logo.png" alt="AI Club"></div>
         ${honorHTML(m)}
         <div class="export-foot">نادي الذكاء الاصطناعي · <span class="en">FCIT_AICLUB</span><b>#نقود_المستقبل</b></div>
@@ -987,7 +989,7 @@ function flipHTML(s){
   return unit(d,"Days") + unit(h,"Hours") + unit(mi,"Minutes") + unit(se,"Seconds");
 }
 
-function renderAnnounce(){
+function renderAnnounce(opts = {}){
   clearInterval(cdTimer);
   revealRun++; clearSpots();
   const el = $("#p-announce");
@@ -1076,6 +1078,12 @@ function renderAnnounce(){
     const b = best[+item.dataset.c];
     return { html: critTile(b), title: `الأفضل في معيار <span>${esc(b.crit)}</span>`, small: true };
   };
+  // Remembers (per month, on this device) that the announcement was already watched
+  const seenKey = `announced-${current.year}-${current.month}`;
+  const seen = {
+    get(){ try { return localStorage.getItem(seenKey) === "1"; } catch { return false; } },
+    set(){ try { localStorage.setItem(seenKey, "1"); } catch {} }
+  };
   const deptItems = [...el.querySelectorAll("#deptStage .dept-item")];
   const critItems = [...el.querySelectorAll("#critStage .dept-item")];
   // A gift can still be opened by hand while the show runs; the show then skips it
@@ -1089,6 +1097,7 @@ function renderAnnounce(){
   // flash "أعضاء الأقسام…" → each department → flash "الأفضل في كل معيار" → each criterion → "مبارك !"
   $("#revealAll").addEventListener("click", async () => {
     const run = revealRun, alive = () => run === revealRun;
+    seen.set();
     const intro = $("#intro");
     intro.classList.add("leaving");
     await wait(600);
@@ -1142,9 +1151,21 @@ function renderAnnounce(){
   // Replay: start the whole show again from the top (for anyone who missed their name)
   $("#replayBtn").addEventListener("click", () => {
     scrollTo({ top:0 });
-    renderAnnounce();
+    renderAnnounce({ replay:true });
     $("#revealAll")?.click();
   });
+
+  // Already watched this month's announcement on this device: after a refresh, show the end result
+  // (every winner in place, "مبارك !" and the replay button) instead of the laptop again
+  if (!opts.replay && seen.get()){
+    $("#intro").classList.add("hidden");
+    $("#stage2").classList.remove("hidden");
+    ["#deptStage", "#critStage"].forEach(id => $(id)?.classList.remove("hidden"));
+    deptItems.concat(critItems).forEach(item => { item.querySelector(".slot").innerHTML = itemInfo(item).html; });
+    $("#congratsBtn").classList.remove("hidden");
+    $("#congratsBtn").classList.add("glow");
+    $("#replayBtn").classList.remove("hidden");
+  }
 }
 
 /* ---------- Archive ---------- */
@@ -1260,7 +1281,8 @@ $("#loginForm").addEventListener("submit", async e => {
   if (!person.found){ err.textContent = "الرقم الجامعي غير مسجل في النادي"; return; }
   memoryUser = v; store.set("uid", v);
   memoryName = person.name; store.set("uname", person.name);
-  if (!location.hash || location.hash === "#") location.hash = "#home"; else route();
+  // Every login starts on the home page, whatever page was open before logging out
+  if (location.hash !== "#home") location.hash = "#home"; else route();
   showWelcome();
 });
 function setWelcomeName(name){
