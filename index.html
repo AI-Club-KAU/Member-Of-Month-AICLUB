@@ -910,10 +910,10 @@ async function drawMemberCard(award, m){
   const tx = (x + 60 + cx - ar - 30) / 2, tw = cx - ar - 30 - (x + 60);
   ctx.fillStyle = "#fff";
   fitFont(ctx, award.name, 700, 70, 38, tw);
-  ctx.fillText(award.name, tx, cy - 26);
+  ctx.fillText(award.name, tx, cy - 38);
   ctx.direction = "ltr"; ctx.fillStyle = "#e6e9f3";
   fitFont(ctx, deptLabel(award.dept), 500, 34, 22, tw);
-  ctx.fillText(deptLabel(award.dept), tx, cy + 44);
+  ctx.fillText(deptLabel(award.dept), tx, cy + 62);
 
   // Footer
   ctx.direction = "rtl";
@@ -945,7 +945,9 @@ async function downloadMyCard(btn, m){
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = "جاري تجهيز البطاقة…";
   try {
-    await saveImage(await drawMemberCard(award, m), `بطاقتي - ${mAr(m)}.png`);
+    // e.g. "وداد حسن - مميز قسم Tech - أكتوبر 2026.png" (characters files can't contain are dropped)
+    const fileName = `${award.name} - ${award.title} - ${mAr(m)}`.replace(/[\\/:*?"<>|]/g, "");
+    await saveImage(await drawMemberCard(award, m), `${fileName}.png`);
   } catch {
     alert("تعذّر تجهيز البطاقة، الرجاء المحاولة مرة أخرى");
   } finally {
