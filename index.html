@@ -294,6 +294,19 @@ main{max-width:1200px;margin:auto;padding-block:28px 80px;padding-left:max(16px,
 .export-head img{height:58px;width:auto}
 .export-foot{text-align:center;margin-top:44px;color:var(--muted);font-size:15px}
 .export-foot b{display:block;margin-top:6px;color:var(--green);font-weight:600}
+/* Winner's own card download */
+.my-card{
+  display:block;margin:-8px auto 26px;padding:9px 24px;border-radius:30px;font-size:15px;font-weight:600;
+  border:1.5px solid var(--green);color:#fff;background:rgba(84,214,64,.12);box-shadow:0 0 16px rgba(84,214,64,.3);transition:.2s;
+}
+.my-card:hover{background:rgba(84,214,64,.25)}
+.my-card:disabled{opacity:.6;cursor:default}
+#stage2 .my-card{margin:30px auto 0;animation:spotIn .6s ease}
+/* Archive: month name with the member's card button next to it */
+.month-head{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px;margin-bottom:24px}
+.month-head .month-pill{margin-bottom:0}
+.my-card.arch{display:inline-block;margin:0;padding:6px 16px;font-size:13px}
+#stage2 .my-card + .replay{margin-top:16px}
 .replay{
   display:block;margin:28px auto 0;padding:8px 22px;border-radius:30px;font-size:14px;
   border:1px solid var(--line);color:var(--muted);transition:.2s;animation:spotIn .6s ease;
@@ -801,6 +814,145 @@ const honorHTML = m => `
     ${secHead("الأفضل في كل معيار")}
     ${critTiles(m)}`;
 
+/* ---------- Personal winner card (square image, drawn on a canvas so it looks the same on every phone) ---------- */
+const normName = s => String(s || "").trim().replace(/\s+/g, " ");
+// What the logged-in member won in month m (member of the month > department > criterion), or null
+function myAward(m){
+  const me = normName(userName());
+  if (!me || !m) return null;
+  if (normName(m.motm?.name) === me) return { title:"عضو الشهر", name:m.motm.name, dept:m.motm.dept };
+  const d = m.depts.find(x => normName(x.name) === me);
+  if (d) return { title:`مميز قسم ${deptLabel(d.dept)}`, name:d.name, dept:d.dept };
+  const b = (m.best || []).find(x => normName(x.name) === me);
+  if (b) return { title:`الأفضل في معيار ${b.crit}`, name:b.name, dept:b.dept };
+  return null;
+}
+const myCardButton = (id, extraClass = "") => `<button class="my-card ${extraClass}" id="${id}">⬇ تحميل بطاقتي</button>`;
+
+const loadImage = src => new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = src; });
+function roundRectPath(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+// Largest font size (down to min) at which text fits in maxWidth
+function fitFont(ctx, text, weight, size, min, maxWidth){
+  for (; size > min; size -= 2){
+    ctx.font = `${weight} ${size}px "Readex Pro"`;
+    if (ctx.measureText(text).width <= maxWidth) return;
+  }
+  ctx.font = `${weight} ${min}px "Readex Pro"`;
+}
+
+async function drawMemberCard(award, m){
+  const S = 1080, c = document.createElement("canvas");
+  c.width = c.height = S;
+  const ctx = c.getContext("2d");
+  await Promise.all(["700 64px", "600 40px", "500 30px"].map(f => document.fonts.load(`${f} "Readex Pro"`, "عضو Tech")));
+  const [logo, icon] = await Promise.all([loadImage("aiclub-logo.png"), loadImage("aiclub-icon.png")]);
+
+  // Background: navy with a soft green glow top-left and violet bottom-right
+  ctx.fillStyle = "#0a1a30"; ctx.fillRect(0, 0, S, S);
+  for (const [x, y, col] of [[120, 140, "rgba(84,214,64,.16)"], [960, 940, "rgba(126,54,227,.22)"]]){
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 560);
+    g.addColorStop(0, col); g.addColorStop(1, "rgba(10,26,48,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, S, S);
+  }
+
+  // Logo, title, month
+  const lh = 84, lw = logo.width * lh / logo.height;
+  ctx.drawImage(logo, (S - lw) / 2, 70, lw, lh);
+  ctx.direction = "rtl"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#fff";
+  fitFont(ctx, award.title, 700, 66, 40, 900);
+  ctx.shadowColor = "rgba(126,54,227,.85)"; ctx.shadowBlur = 34;
+  ctx.fillText(award.title, S / 2, 245);
+  ctx.shadowColor = "rgba(84,214,64,.6)"; ctx.shadowBlur = 18;
+  ctx.fillText(award.title, S / 2, 245);
+  ctx.shadowBlur = 0;
+  ctx.font = '500 34px "Readex Pro"'; ctx.fillStyle = "#a9b3cc";
+  ctx.fillText(mAr(m), S / 2, 312);
+
+  // Neon card: green glow on one side, violet on the other, gradient frame
+  const x = 100, y = 380, w = 880, h = 400, r = 34;
+  for (const [col, dx] of [["rgba(84,214,64,.55)", -12], ["rgba(126,54,227,.7)", 12]]){
+    ctx.save();
+    ctx.shadowColor = col; ctx.shadowBlur = 46; ctx.shadowOffsetX = dx;
+    roundRectPath(ctx, x, y, w, h, r); ctx.fillStyle = "#0a1a30"; ctx.fill();
+    ctx.restore();
+  }
+  const frame = ctx.createLinearGradient(x, 0, x + w, 0);
+  frame.addColorStop(0, "#a6f58c"); frame.addColorStop(.25, "#54d640"); frame.addColorStop(.55, "#5bc6e6");
+  frame.addColorStop(.8, "#8b5cf6"); frame.addColorStop(1, "#c58cf5");
+  roundRectPath(ctx, x, y, w, h, r); ctx.fillStyle = frame; ctx.fill();
+  const inner = ctx.createLinearGradient(x, 0, x + w, 0);
+  inner.addColorStop(0, "#2b4a3e"); inner.addColorStop(.5, "#2a3a58"); inner.addColorStop(1, "#3a2f63");
+  roundRectPath(ctx, x + 6, y + 6, w - 12, h - 12, r - 5); ctx.fillStyle = inner; ctx.fill();
+  roundRectPath(ctx, x + 34, y + 34, w - 68, h - 68, 20);
+  ctx.strokeStyle = "rgba(255,255,255,.22)"; ctx.lineWidth = 2; ctx.stroke();
+
+  // Avatar (right side, like the site): club icon over a green/violet "body", ringed in green and violet
+  const cx = x + w - 190, cy = y + h / 2, ar = 118;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, ar, 0, Math.PI * 2); ctx.fillStyle = "#1b2440"; ctx.fill(); ctx.clip();
+  const body = ctx.createLinearGradient(cx - 70, 0, cx + 70, 0);
+  body.addColorStop(0, "#7b6fbf"); body.addColorStop(1, "#62c24f");
+  ctx.beginPath(); ctx.ellipse(cx, cy + 58, 72, 42, 0, 0, Math.PI * 2); ctx.fillStyle = body; ctx.fill();
+  ctx.drawImage(icon, cx - 40, cy - 86, 80, 80);
+  ctx.restore();
+  ctx.lineWidth = 9;
+  ctx.beginPath(); ctx.arc(cx, cy, ar, -Math.PI * .75, Math.PI * .25); ctx.strokeStyle = "#74c460"; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, ar, Math.PI * .25, Math.PI * 1.25); ctx.strokeStyle = "#7c6fc4"; ctx.stroke();
+
+  // Name and department, centred in the space left of the avatar
+  const tx = (x + 60 + cx - ar - 30) / 2, tw = cx - ar - 30 - (x + 60);
+  ctx.fillStyle = "#fff";
+  fitFont(ctx, award.name, 700, 70, 38, tw);
+  ctx.fillText(award.name, tx, cy - 26);
+  ctx.direction = "ltr"; ctx.fillStyle = "#e6e9f3";
+  fitFont(ctx, deptLabel(award.dept), 500, 34, 22, tw);
+  ctx.fillText(deptLabel(award.dept), tx, cy + 44);
+
+  // Footer
+  ctx.direction = "rtl";
+  ctx.font = '500 28px "Readex Pro"'; ctx.fillStyle = "#a9b3cc";
+  ctx.fillText("نادي الذكاء الاصطناعي · FCIT_AICLUB", S / 2, 905);
+  ctx.font = '700 38px "Readex Pro"'; ctx.fillStyle = "#54d640";
+  ctx.fillText("#نقود_المستقبل", S / 2, 965);
+
+  return new Promise(ok => c.toBlob(ok, "image/png"));
+}
+
+// Phones get the share sheet (save to photos / post); laptops download the file
+async function saveImage(blob, filename){
+  const file = new File([blob], filename, { type:"image/png" });
+  if (matchMedia("(hover: none)").matches && navigator.canShare?.({ files:[file] })){
+    try { await navigator.share({ files:[file] }); return; }
+    catch (e) { if (e.name === "AbortError") return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+async function downloadMyCard(btn, m){
+  const award = myAward(m);
+  if (!award || btn.disabled) return;
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "جاري تجهيز البطاقة…";
+  try {
+    await saveImage(await drawMemberCard(award, m), `بطاقتي - ${mAr(m)}.png`);
+  } catch {
+    alert("تعذّر تجهيز البطاقة، الرجاء المحاولة مرة أخرى");
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
 function renderHonor(){
   // While the announcement is live the board is locked, so nobody sees the winners before the show
   if (isOpen()){
@@ -818,6 +970,11 @@ function renderHonor(){
   if (!m){ $("#p-honor").innerHTML = `<p class="empty">لا توجد نتائج معلنة بعد</p>`; return; }
   $("#p-honor").innerHTML = `${honorHTML(m)}<button class="dl-btn" id="dlHonor">⬇ تحميل لوحة الشرف</button>`;
   $("#dlHonor").addEventListener("click", e => downloadHonor(e.currentTarget, m));
+  // Winners get a button for their own card, right under the title
+  if (myAward(m)){
+    $("#p-honor .page-title").insertAdjacentHTML("afterend", myCardButton("myCardHonor"));
+    $("#myCardHonor").addEventListener("click", e => downloadMyCard(e.currentTarget, m));
+  }
 }
 
 /* ---------- Honor board as an image ---------- */
@@ -1053,6 +1210,7 @@ function renderAnnounce(opts = {}){
         </div>
       </div>` : ""}
       <button class="neon congrats hidden" id="congratsBtn" style="width:fit-content"><span class="neon-in" style="display:block">مبارك !</span></button>
+      ${myAward(current) ? myCardButton("myCardAnnounce", "hidden") : ""}
       <button class="replay hidden" id="replayBtn">↻ إعادة الإعلان</button>
     </div>`;
   $("#flip").innerHTML = flipHTML(0);
@@ -1147,7 +1305,7 @@ function renderAnnounce(opts = {}){
     congrats.scrollIntoView({ block:"center", behavior:"smooth" });
     confetti(240);
     await wait(1800);
-    if (alive()) $("#replayBtn").classList.remove("hidden");
+    if (alive()){ $("#replayBtn").classList.remove("hidden"); $("#myCardAnnounce")?.classList.remove("hidden"); }
   });
 
   // Replay: start the whole show again from the top (for anyone who missed their name)
@@ -1167,7 +1325,9 @@ function renderAnnounce(opts = {}){
     $("#congratsBtn").classList.remove("hidden");
     $("#congratsBtn").classList.add("glow");
     $("#replayBtn").classList.remove("hidden");
+    $("#myCardAnnounce")?.classList.remove("hidden");
   }
+  $("#myCardAnnounce")?.addEventListener("click", e => downloadMyCard(e.currentTarget, current));
 }
 
 /* ---------- Archive ---------- */
@@ -1204,7 +1364,10 @@ function renderArchive(){
         const best = m.best.filter(match);
         if (!showMotm && !depts.length && !best.length) return "";
         return `<div class="month-block">
-          <div class="month-pill"><span>${mAr(m)}</span></div>
+          <div class="month-head">
+            <div class="month-pill"><span>${mAr(m)}</span></div>
+            ${myAward(m) ? `<button class="my-card arch" data-y="${m.year}" data-m="${m.month}">⬇ تحميل بطاقتي</button>` : ""}
+          </div>
           ${showMotm ? `<div class="neon vcard"><div class="neon-in">
               <div style="font-size:22px;font-weight:600">عضو الشهر</div>
               ${avatar(m.motm.photo, m.motm.name)}
@@ -1221,6 +1384,13 @@ function renderArchive(){
     $("#alist").innerHTML = blocks || `<p class="empty">لا توجد نتائج مطابقة للبحث</p>`;
   };
   draw();
+  // Card buttons on the months the member won (one listener for the whole list, since it redraws on every search)
+  $("#alist").addEventListener("click", e => {
+    const btn = e.target.closest(".my-card.arch");
+    if (!btn) return;
+    const m = months.find(x => x.year === +btn.dataset.y && x.month === +btn.dataset.m);
+    if (m) downloadMyCard(btn, m);
+  });
   $("#aq").addEventListener("input", e => { af.q = e.target.value; draw(); });
   $("#fbtn").addEventListener("click", () => { af.open = !af.open; $("#filters").classList.toggle("hidden", !af.open); $("#fbtn").classList.toggle("on", af.open); });
   $("#fy").addEventListener("change", e => { af.year = e.target.value; draw(); });
